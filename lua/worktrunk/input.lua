@@ -73,6 +73,11 @@ function M.open(opts, on_confirm)
 			return
 		end
 		done = true
+		-- the window is entered with `startinsert`; closing it while still in
+		-- insert mode leaves the *next* buffer in insert mode too
+		if vim.fn.mode():sub(1, 1) == "i" then
+			vim.cmd.stopinsert()
+		end
 		close(win, buf)
 		vim.schedule(function()
 			on_confirm(value)

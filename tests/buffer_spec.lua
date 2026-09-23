@@ -98,6 +98,40 @@ describe("buffer.counterpart", function()
 	end)
 end)
 
+describe("buffer.locate", function()
+	local lines = { "local a = 1", "", "local b = 2", "return a" }
+
+	it("prefers the exact same line", function()
+		local line, exact = buffer.locate({ line = 1, col = 0, text = "return a" }, lines)
+		assert.are.equal(4, line)
+		assert.True(exact)
+	end)
+
+	it("picks the occurrence nearest the old line number", function()
+		local dup = { "x", "y", "x", "y", "x" }
+		assert.are.equal(3, buffer.locate({ line = 3, col = 0, text = "x" }, dup))
+		assert.are.equal(1, buffer.locate({ line = 1, col = 0, text = "x" }, dup))
+		assert.are.equal(5, buffer.locate({ line = 5, col = 0, text = "x" }, dup))
+	end)
+
+	it("falls back to the same line number", function()
+		local line, exact = buffer.locate({ line = 3, col = 0, text = "gone" }, lines)
+		assert.are.equal(3, line)
+		assert.False(exact)
+	end)
+
+	it("clamps past the end of the buffer", function()
+		assert.are.equal(4, buffer.locate({ line = 99, col = 0, text = nil }, lines))
+		assert.are.equal(1, buffer.locate({ line = 99, col = 0, text = "x" }, {}))
+	end)
+
+	it("ignores blank lines, which match anywhere", function()
+		local line, exact = buffer.locate({ line = 4, col = 0, text = "" }, lines)
+		assert.are.equal(4, line)
+		assert.False(exact)
+	end)
+end)
+
 describe("buffer.migrate", function()
 	local old, new
 
@@ -162,6 +196,31 @@ describe("buffer.migrate", function()
 		assert.are.equal(new .. "/lua", vim.fs.normalize(path):gsub("/+$", ""))
 		assert.False(vim.api.nvim_buf_is_valid(stale) and vim.bo[stale].buflisted)
 		assert.are.same({}, buffer.buffers_in(old))
+	end)
+
+	it("keeps the cursor on the same line of text", function()
+		vim.fn.writefile({ "-- header", "local a = 1", "return a" }, old .. "/lua/shift.lua")
+		vim.fn.writefile({ "-- header", "-- extra", "-- extra", "local a = 1", "return a" }, new .. "/lua/shift.lua")
+
+		open(old .. "/lua/shift.lua")
+		vim.api.nvim_win_set_cursor(0, { 2, 6 })
+
+		buffer.migrate(old, new)
+
+		assert.are.same({ 4, 6 }, vim.api.nvim_win_get_cursor(0))
+	end)
+
+	it("falls back to the same line number and clamps the column", function()
+		vim.fn.writefile({ "-- header", "local gone = 1", "return 1" }, old .. "/lua/shift.lua")
+		vim.fn.writefile({ "-- header", "ab", "return 1" }, new .. "/lua/shift.lua")
+
+		open(old .. "/lua/shift.lua")
+		vim.api.nvim_win_set_cursor(0, { 2, 10 })
+
+		buffer.migrate(old, new)
+
+		-- "ab" is 2 chars, and normal mode caps the column at the last one
+		assert.are.same({ 2, 1 }, vim.api.nvim_win_get_cursor(0))
 	end)
 
 	it("does nothing when the roots are the same", function()
