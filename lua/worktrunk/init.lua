@@ -5,6 +5,7 @@
 ---   worktrunk.worktree  read-only queries over `wt list`
 ---   worktrunk.actions   switch / create / delete / merge
 ---   worktrunk.picker    snacks.nvim picker
+---   worktrunk.input     floating one-line input (completion friendly)
 ---   worktrunk.config    user options
 ---   worktrunk.log       notifications
 ---   worktrunk.types     LuaCATS definitions
@@ -37,7 +38,8 @@ M.name = worktree.name
 --- switch to the given worktree, if nil open a snack picker with choices
 M.switch = actions.switch
 
---- create a branch and its worktree, then switch to it
+--- create a branch and its worktree, then switch to it,
+--- if nil open the worktree creation input
 M.create = actions.create
 
 --- delete given worktree, if currently on deleted worktree,

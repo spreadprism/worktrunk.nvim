@@ -98,12 +98,24 @@ function M.switch(worktree_name)
 	end
 end
 
----Create a branch and its worktree, then switch to it.
----@param branch string
+--- Create a branch and its worktree, then switch to it. With no name, open the
+--- worktree creation input (a real buffer, so completion can attach to it).
+---@param worktree_name? string
 ---@param base? string
-function M.create(branch, base)
-	if run_switch({ branch = branch, base = base, create = true }) then
-		log.info("created " .. branch)
+function M.create(worktree_name, base)
+	if not worktree_name then
+		return require("worktrunk.input").open({
+			prompt = "New worktree",
+			kind = "branch",
+		}, function(name)
+			if name then
+				M.create(name, base)
+			end
+		end)
+	end
+
+	if run_switch({ branch = worktree_name, base = base, create = true }) then
+		log.info("created " .. worktree_name)
 	end
 end
 

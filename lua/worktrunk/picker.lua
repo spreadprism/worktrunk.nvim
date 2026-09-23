@@ -373,26 +373,14 @@ local actions = {
 	end,
 
 	---Create a worktree for a *new* branch named after the typed text (like
-	---`Alt-c` in the `wt switch` picker). Prompts when the input is empty.
+	---`Alt-c` in the `wt switch` picker). Opens the creation input when the
+	---pattern is empty.
 	worktrunk_create = function(picker)
 		local _, _, rest = M.parse_pattern(vim.trim(picker.input.filter.pattern))
 		local branch = vim.trim(rest)
 		picker:close()
 
-		local function create(name)
-			require("worktrunk.actions").create(name)
-		end
-
-		if branch == "" then
-			return vim.ui.input({ prompt = "New branch: " }, function(input)
-				input = input and vim.trim(input) or ""
-				if input ~= "" then
-					create(input)
-				end
-			end)
-		end
-
-		create(branch)
+		require("worktrunk.actions").create(branch ~= "" and branch or nil)
 	end,
 
 	---Re-run `wt list` (pick up worktrees created elsewhere).
