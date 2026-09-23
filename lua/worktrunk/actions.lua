@@ -35,7 +35,7 @@ end
 ---@param path string
 local function cd(path)
 	if config.get().auto_cd then
-		vim.cmd.tcd(vim.fn.fnameescape(path))
+		vim.cmd.cd(vim.fn.fnameescape(path))
 	end
 end
 

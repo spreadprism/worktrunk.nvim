@@ -4,11 +4,11 @@ local M = {}
 
 ---@class Worktrunk.Hooks
 ---@field on_switch fun(event: Worktrunk.SwitchEvent) run after a switch
----completed, i.e. after the `tcd` and the `auto_buffer` shuffle
+---completed, i.e. after the `cd` and the `auto_buffer` shuffle
 
 ---@class Worktrunk.Config
 ---@field bin string `wt` binary to run
----@field auto_cd boolean `tcd` into the worktree after a switch
+---@field auto_cd boolean `cd` into the worktree after a switch
 ---@field auto_buffer boolean on switch, drop the old worktree's buffers and
 ---reopen the current file's counterpart (or the startup empty buffer)
 ---@field hooks Worktrunk.Hooks user callbacks
