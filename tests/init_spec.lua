@@ -108,6 +108,27 @@ describe("worktrunk", function()
 	end)
 
 	describe("switch", function()
+		it("fires hooks.on_switch once the switch landed", function()
+			local seen
+			config.options, config.config = nil, nil
+			worktrunk.setup({
+				auto_cd = false,
+				auto_buffer = false,
+				hooks = {
+					on_switch = function(event)
+						seen = event
+					end,
+				},
+			})
+
+			worktrunk.switch("main")
+
+			assert.are.equal("main", seen.branch)
+			assert.are.equal("/repo.main", seen.path)
+			assert.are.equal("switched", seen.action)
+			assert.False(seen.created)
+		end)
+
 		it("switches with --no-cd and json output", function()
 			worktrunk.switch("main")
 			assert.are.equal("switch", calls[1].cmd)

@@ -1,6 +1,8 @@
 --- The commands the plugin exposes: switch, create, delete, merge.
+local buffer = require("worktrunk.buffer")
 local cli = require("worktrunk.cli")
 local config = require("worktrunk.config")
+local hooks = require("worktrunk.hooks")
 local log = require("worktrunk.log")
 local worktree = require("worktrunk.worktree")
 
@@ -37,11 +39,21 @@ local function cd(path)
 	end
 end
 
+---Where nvim sits right now: what `auto_buffer` diffs against, and what the
+---`on_switch` hook reports as `from`.
+---@return string|nil
+local function origin()
+	local current = worktree.current()
+	return (current and current.worktree and current.worktree.path) or vim.fn.getcwd()
+end
+
 ---`wt` does the cd through shell integration we don't have, so every switch
 ---runs with --no-cd and chdirs nvim from the returned path.
 ---@param opts worktrunk.SwitchOpts
 ---@return table|nil result decoded `{action, branch, path}`
 local function run_switch(opts)
+	local from = origin()
+
 	local result = cli.switch(vim.tbl_extend("force", opts, { no_cd = true, yes = true, format = "json" })) --[[@as vim.SystemCompleted]]
 	if result.code ~= 0 then
 		log.err(output(result))
@@ -55,6 +67,19 @@ local function run_switch(opts)
 	end
 
 	cd(decoded.path)
+	if from and config.get().auto_buffer then
+		buffer.migrate(from, decoded.path)
+	end
+
+	-- after the cd and the buffer shuffle, so the hook sees the final state
+	hooks.on_switch({
+		branch = decoded.branch,
+		path = decoded.path,
+		from = from or nil,
+		action = decoded.action,
+		created = opts.create == true,
+	})
+
 	return decoded
 end
 
