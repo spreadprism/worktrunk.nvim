@@ -18,6 +18,22 @@ local function normalize(path)
 	return vim.fs.normalize(vim.fn.fnamemodify(path, ":p")):gsub("/+$", "")
 end
 
+---Buffers like oil's are named `oil:///abs/path`: a scheme glued to a real
+---path. Split it so the path half can be treated like any other file.
+---@param name string|nil
+---@return string scheme `""` for plain files
+---@return string|nil path
+function M.split_scheme(name)
+	if name == nil or name == "" then
+		return "", nil
+	end
+	local scheme, rest = name:match("^(%a[%w+.-]*://)(.*)$")
+	if scheme and rest ~= "" and rest:sub(1, 1) == "/" then
+		return scheme, rest
+	end
+	return "", name
+end
+
 ---`path` relative to `root`, or nil when it lives outside of it.
 ---@param path string|nil
 ---@param root string|nil
@@ -43,7 +59,8 @@ end
 function M.buffers_in(root)
 	local bufs = {}
 	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.bo[buf].buflisted and M.relative(vim.api.nvim_buf_get_name(buf), root) then
+		local _, path = M.split_scheme(vim.api.nvim_buf_get_name(buf))
+		if vim.bo[buf].buflisted and M.relative(path, root) then
 			table.insert(bufs, buf)
 		end
 	end
@@ -56,15 +73,31 @@ end
 ---@param new_root string
 ---@return string|nil
 function M.counterpart(path, old_root, new_root)
+	local scheme
+	scheme, path = M.split_scheme(path)
+
 	local rel = M.relative(path, old_root)
-	if not rel or rel == "" then
+	if not rel then
+		return nil
+	end
+	-- the worktree root itself only means something for a scheme buffer
+	-- (an oil listing of the root); a plain file never sits there
+	if rel == "" and scheme == "" then
 		return nil
 	end
 
-	local candidate = normalize(new_root) .. "/" .. rel
+	local candidate = normalize(new_root)
+	if rel ~= "" then
+		candidate = candidate .. "/" .. rel
+	end
+
 	local stat = vim.uv.fs_stat(candidate)
-	if stat and stat.type == "file" then
-		return candidate
+	if not stat then
+		return nil
+	end
+	-- directories are only openable through a scheme handler like oil
+	if stat.type == "file" or (scheme ~= "" and stat.type == "directory") then
+		return scheme .. candidate
 	end
 	return nil
 end

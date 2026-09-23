@@ -20,6 +20,24 @@ describe("buffer.relative", function()
 	end)
 end)
 
+describe("buffer.split_scheme", function()
+	it("splits a scheme buffer name", function()
+		local scheme, path = buffer.split_scheme("oil:///repo/lua")
+		assert.are.equal("oil://", scheme)
+		assert.are.equal("/repo/lua", path)
+	end)
+
+	it("leaves plain names alone", function()
+		local scheme, path = buffer.split_scheme("/repo/lua/init.lua")
+		assert.are.equal("", scheme)
+		assert.are.equal("/repo/lua/init.lua", path)
+
+		scheme, path = buffer.split_scheme("")
+		assert.are.equal("", scheme)
+		assert.is_nil(path)
+	end)
+end)
+
 describe("buffer.counterpart", function()
 	local old, new
 
@@ -46,6 +64,37 @@ describe("buffer.counterpart", function()
 	it("returns nil for a buffer outside the old worktree", function()
 		assert.is_nil(buffer.counterpart("/elsewhere/init.lua", old, new))
 		assert.is_nil(buffer.counterpart("", old, new))
+	end)
+
+	it("maps an oil directory buffer, root included", function()
+		assert.are.equal("oil://" .. new .. "/lua", buffer.counterpart("oil://" .. old .. "/lua", old, new))
+		assert.are.equal("oil://" .. new, buffer.counterpart("oil://" .. old, old, new))
+	end)
+
+	it("returns nil when the directory is missing in the new worktree", function()
+		vim.fn.mkdir(old .. "/only", "p")
+		assert.is_nil(buffer.counterpart("oil://" .. old .. "/only", old, new))
+	end)
+
+	it("never maps a plain directory path", function()
+		assert.is_nil(buffer.counterpart(old .. "/lua", old, new))
+	end)
+
+	-- the `~/platform` -> `~/platform.test` sibling layout: the new root is a
+	-- string prefix of nothing, and the old root is a prefix of the new one
+	it("maps sibling worktree roots", function()
+		local root = vim.fs.normalize(vim.fn.tempname() .. "-siblings")
+		vim.fn.mkdir(root .. "/platform/lua", "p")
+		vim.fn.mkdir(root .. "/platform.test/lua", "p")
+		local base, test = root .. "/platform", root .. "/platform.test"
+
+		assert.are.equal("oil://" .. test, buffer.counterpart("oil://" .. base, base, test))
+		assert.are.equal("oil://" .. base, buffer.counterpart("oil://" .. test, test, base))
+		assert.are.equal("oil://" .. test .. "/lua", buffer.counterpart("oil://" .. base .. "/lua", base, test))
+		-- ...and `platform.test` must not be treated as living inside `platform`
+		assert.is_nil(buffer.counterpart("oil://" .. test, base, test))
+
+		vim.fn.delete(root, "rf")
 	end)
 end)
 
@@ -100,6 +149,19 @@ describe("buffer.migrate", function()
 
 		assert.True(vim.api.nvim_buf_is_valid(outside))
 		assert.True(vim.bo[outside].buflisted)
+	end)
+
+	it("follows an oil buffer to the new worktree", function()
+		local stale = open(old .. "/lua/only.lua")
+		open("oil://" .. old .. "/lua")
+
+		buffer.migrate(old, new)
+
+		local scheme, path = buffer.split_scheme(vim.api.nvim_buf_get_name(0))
+		assert.are.equal("oil://", scheme)
+		assert.are.equal(new .. "/lua", vim.fs.normalize(path):gsub("/+$", ""))
+		assert.False(vim.api.nvim_buf_is_valid(stale) and vim.bo[stale].buflisted)
+		assert.are.same({}, buffer.buffers_in(old))
 	end)
 
 	it("does nothing when the roots are the same", function()
