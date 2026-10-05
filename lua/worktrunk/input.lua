@@ -1,17 +1,13 @@
 --- A one-line floating input backed by a *real* buffer.
 ---
 --- `vim.ui.input()` is either a cmdline prompt or whatever the user's UI plugin
---- provides, and neither gives us a buffer we control. Completion engines
---- (blink.cmp, nvim-cmp, ...) attach per buffer and are configured per
---- filetype, so this window uses a normal scratch buffer with a dedicated
---- filetype — `worktrunk-input`, plus `b:worktrunk_input` describing what is
---- being asked. A blink source for branch names can then be wired with:
+--- provides, and neither gives us a buffer we control. This window uses a
+--- normal scratch buffer with a dedicated filetype — `worktrunk-input`, plus
+--- `b:worktrunk_input` describing what is being asked — so the usual buffer
+--- local settings and mappings apply.
 ---
---- ```lua
---- require("blink.cmp").setup({
----   sources = { per_filetype = { ["worktrunk-input"] = { "worktrunk" } } },
---- })
---- ```
+--- Picking an *existing* branch is a picker's job (`worktrunk.picker`); this
+--- input only ever asks for free text, e.g. a new branch name.
 local M = {}
 
 M.filetype = "worktrunk-input"
@@ -47,8 +43,6 @@ function M.open(opts, on_confirm)
 	vim.bo[buf].bufhidden = "wipe"
 	vim.bo[buf].filetype = M.filetype
 	vim.b[buf].worktrunk_input = opts.kind or "branch"
-	-- blink.cmp opt-in flag, for users who enable it per buffer
-	vim.b[buf].completion = true
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { default })
 
 	local width = math.min(opts.width or 60, vim.o.columns - 4)

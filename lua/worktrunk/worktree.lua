@@ -55,6 +55,19 @@ function M.current()
 	return nil
 end
 
+---Find a *local branch* by name, worktree or not — what `wt switch --create`
+---would collide with.
+---@param branch string
+---@return Worktrunk.Worktree|nil
+function M.branch(branch)
+	for _, wt in ipairs(M.all({ branches = true })) do
+		if wt.branch == branch and wt.remote == nil then
+			return wt
+		end
+	end
+	return nil
+end
+
 ---Find a worktree by branch name or by path.
 ---@param worktree string
 ---@return Worktrunk.Worktree|nil

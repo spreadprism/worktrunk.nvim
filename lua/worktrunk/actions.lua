@@ -98,8 +98,11 @@ function M.switch(worktree_name)
 	end
 end
 
---- Create a branch and its worktree, then switch to it. With no name, open the
---- worktree creation input (a real buffer, so completion can attach to it).
+--- Create a branch and its worktree, then switch to it. Missing arguments are
+--- asked for in turn: the name through the worktrunk input (free text), the
+--- base through the picker (an existing branch or worktree). Cancelling either
+--- one aborts, and an existing branch is refused before anything is asked or
+--- created.
 ---@param worktree_name? string
 ---@param base? string
 function M.create(worktree_name, base)
@@ -111,6 +114,19 @@ function M.create(worktree_name, base)
 			if name then
 				M.create(name, base)
 			end
+		end)
+	end
+
+	local existing = worktree.branch(worktree_name)
+	if existing then
+		local where = existing.worktree and (" (" .. existing.worktree.path .. ")") or ""
+		log.err("branch " .. worktree_name .. " already exists" .. where .. ", switch to it instead")
+		return
+	end
+
+	if not base then
+		return require("worktrunk.picker").pick({ title = "Base for " .. worktree_name }, function(wt)
+			M.create(worktree_name, worktree.name(wt))
 		end)
 	end
 
