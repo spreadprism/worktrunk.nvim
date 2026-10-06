@@ -47,7 +47,10 @@ M.create = actions.create
 --- refuses to delete base worktree
 M.delete = actions.delete
 
---- merge current worktree to base (don't merge if already on base)
+--- merge current worktree into a target (don't merge from the base worktree),
+--- if no target is given open the picker to choose one;
+--- `opts` maps every `wt merge` flag (see `Worktrunk.MergeOpts`)
+---@type fun(opts?: Worktrunk.MergeOpts)
 M.merge = actions.merge
 
 --- open the worktree picker

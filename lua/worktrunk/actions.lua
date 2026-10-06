@@ -183,8 +183,32 @@ function M.delete(worktree_name)
 	log.info("deleted " .. worktree.name(target))
 end
 
---- merge current worktree to base (don't merge if already on base)
-function M.merge()
+--- Options for `M.merge`, one field per `wt merge` flag.
+---
+--- `cwd` and `format` are not exposed: the action pins the working directory
+--- to the worktree it merges and needs JSON back to report the result.
+---@class Worktrunk.MergeOpts
+---@field target string|nil                 [TARGET]        Target branch. Omit to pick one from the worktree picker.
+---@field no_squash boolean|nil             --no-squash     Skip commit squashing
+---@field no_commit boolean|nil             --no-commit     Skip commit and squash
+---@field no_rebase boolean|nil             --no-rebase     Skip rebase; require a fast-forward
+---@field no_remove boolean|nil             --no-remove     Keep worktree after merge
+---@field no_ff boolean|nil                 --no-ff         Create a merge commit
+---@field stage "all"|"tracked"|"none"|nil  --stage <STAGE> What to stage before committing [default: all]
+---@field no_hooks boolean|nil              --no-hooks      Skip hooks
+---@field config string|nil                 --config <path> User config file path
+---@field config_set string[]|string|nil    --config-set <toml> Inline TOML overrides (repeatable)
+---@field verbose integer|nil               -v...           0|1|2 verbosity
+---@field yes boolean|nil                   -y, --yes       Skip approval prompts [default: true]
+
+--- Merge the current worktree into a target branch (never from the base
+--- worktree). Without `target` the picker asks for one; cancelling aborts.
+--- Afterwards nvim follows the target, whether or not `no_remove` keeps the
+--- merged worktree alive.
+---@param opts? Worktrunk.MergeOpts
+function M.merge(opts)
+	opts = opts or {}
+
 	local current = worktree.current()
 	if not current then
 		log.err("not inside a worktree")
@@ -196,24 +220,32 @@ function M.merge()
 		return
 	end
 
-	local base = worktree.base()
+	if not opts.target then
+		return require("worktrunk.picker").pick({ title = "Merge " .. worktree.name(current) .. " into" }, function(wt)
+			M.merge(vim.tbl_extend("force", opts, { target = worktree.name(wt) }))
+		end)
+	end
+
+	-- where to land afterwards: the target's worktree if it has one, else base
+	local destination = worktree.find(opts.target) or worktree.base()
 
 	--- `wt merge` resolves the branch from its working directory, and removes
 	--- that worktree when it's done — so pin it explicitly and leave afterwards.
-	local result = cli.merge({
+	local result = cli.merge(vim.tbl_extend("force", { yes = true }, opts, {
 		cwd = current.worktree and current.worktree.path,
-		yes = true,
 		format = "json",
-	}) --[[@as vim.SystemCompleted]]
+	})) --[[@as vim.SystemCompleted]]
 	if result.code ~= 0 then
 		log.err(output(result))
 		return
 	end
 
-	if base then
-		M.switch(worktree.name(base))
+	-- follow the target either way: the worktree we merged from is usually gone,
+	-- and with --no-remove it survives but we still want to land on the target
+	if destination then
+		M.switch(worktree.name(destination))
 	end
-	log.info("merged " .. worktree.name(current) .. " into " .. (base and worktree.name(base) or "the default branch"))
+	log.info("merged " .. worktree.name(current) .. " into " .. opts.target)
 end
 
 return M

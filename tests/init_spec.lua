@@ -169,10 +169,55 @@ describe("worktrunk", function()
 	end)
 
 	describe("merge", function()
-		it("merges from the current worktree then switches to base", function()
+		local picker, picks
+
+		before_each(function()
+			picker = require("worktrunk.picker")
+			picks = {}
+			real.pick = picker.pick
+			-- the picker answers with the base worktree, like a user would
+			picker.pick = function(opts, on_choice)
+				table.insert(picks, opts)
+				if on_choice then
+					on_choice(wt("main", { main = true }))
+				end
+			end
+		end)
+
+		after_each(function()
+			picker.pick = real.pick
+			real.pick = nil
+		end)
+
+		it("asks the picker for a target when none is given", function()
 			worktrunk.merge()
+			assert.are.equal(1, #picks)
+			assert.are.equal("Merge feature into", picks[1].title)
+			assert.are.equal("merge", calls[1].cmd)
+			assert.are.equal("main", calls[1].opts.target)
+		end)
+
+		it("merges from the current worktree then switches to the target", function()
+			worktrunk.merge({ target = "main" })
+			assert.are.equal(0, #picks)
 			assert.are.equal("merge", calls[1].cmd)
 			assert.are.equal("/repo.feature", calls[1].opts.cwd)
+			assert.are.equal("switch", calls[2].cmd)
+			assert.are.equal("main", calls[2].opts.branch)
+		end)
+
+		it("maps the merge options onto the cli", function()
+			worktrunk.merge({ target = "main", no_squash = true, stage = "tracked" })
+			assert.are.equal("merge", calls[1].cmd)
+			assert.are.equal("main", calls[1].opts.target)
+			assert.is_true(calls[1].opts.no_squash)
+			assert.are.equal("tracked", calls[1].opts.stage)
+		end)
+
+		it("follows the target even when no_remove keeps the worktree", function()
+			worktrunk.merge({ target = "main", no_remove = true })
+			assert.are.equal("merge", calls[1].cmd)
+			assert.is_true(calls[1].opts.no_remove)
 			assert.are.equal("switch", calls[2].cmd)
 			assert.are.equal("main", calls[2].opts.branch)
 		end)
