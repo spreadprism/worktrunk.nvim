@@ -12,10 +12,14 @@ local M = {}
 ---@field auto_buffer boolean on switch, drop the old worktree's buffers and
 ---reopen the current file's counterpart (or the startup empty buffer)
 ---@field hooks Worktrunk.Hooks user callbacks
+---@field cache_ttl integer ms a cached `wt list` stays fresh. Past it, reads
+---are still served instantly from the stale entry while a background refresh
+---runs (`math.huge` disables the background refresh)
 M.defaults = {
 	bin = "wt",
 	auto_cd = true,
 	auto_buffer = true,
+	cache_ttl = 5000,
 	hooks = {
 		---@param _event Worktrunk.SwitchEvent
 		on_switch = function(_event) end,

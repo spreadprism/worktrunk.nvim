@@ -2,6 +2,7 @@
 --- behaviour lives in its own module:
 ---
 ---   worktrunk.cli       argv builders for the `wt` binary
+---   worktrunk.cache     stale-while-revalidate cache over `wt list`
 ---   worktrunk.worktree  read-only queries over `wt list`
 ---   worktrunk.actions   switch / create / delete / merge
 ---   worktrunk.picker    snacks.nvim picker
@@ -18,7 +19,13 @@ require("worktrunk.types")
 local M = {}
 
 --- configure the plugin
-M.setup = config.setup
+---@param opts? Worktrunk.Config
+function M.setup(opts)
+	config.setup(opts)
+	-- warm the picker's query in the background so even the first open is
+	-- served from cache (outside a repo this fails silently and caches nothing)
+	require("worktrunk.cache").prefetch({ branches = true, remotes = true })
+end
 
 --- returns a list of worktrees
 M.list = worktree.list

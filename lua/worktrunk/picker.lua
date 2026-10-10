@@ -3,7 +3,7 @@
 --- worktree, multi-select removal, and create/refresh actions.
 ---
 --- Falls back to `vim.ui.select` when snacks.nvim isn't installed.
-local cli = require("worktrunk.cli")
+local cache = require("worktrunk.cache")
 local log = require("worktrunk.log")
 local worktree = require("worktrunk.worktree")
 
@@ -28,7 +28,6 @@ local M = {}
 ---@field worktrunk Worktrunk.Worktree raw `wt list` item
 
 ---@class Worktrunk.PickerState
----@field cache table<string, Worktrunk.Worktree[]> raw `wt list` items per mode
 ---@field kind? Worktrunk.PickerKind last parsed sigil, to detect changes
 
 ---@class Worktrunk.PickerConfig: snacks.picker.Config
@@ -228,9 +227,9 @@ end
 -- finder & format
 --------------------------------------------------------------------------------
 
----Synchronous finder: `wt` is fast and the result is cached for the lifetime of
----the picker, so this avoids the async finder dance (snacks aborts the finder
----task on every re-find, dropping late `cb()` calls).
+---Synchronous finder: `wt` is fast and the result comes from the shared cache,
+---so this avoids the async finder dance (snacks aborts the finder task on
+---every re-find, dropping late `cb()` calls).
 ---
 ---Unlike `require("worktrunk").list()` this passes `--branches`/`--remotes` so
 ---branches without a worktree show up too (same set as `wt switch`).
@@ -238,27 +237,29 @@ end
 ---@param ctx snacks.picker.finder.ctx
 ---@return Worktrunk.PickerItem[]
 local function finder(opts, ctx)
-	local state = assert(opts.wt_state)
 	local kind, number = ctx.filter.meta.wt_kind, ctx.filter.meta.wt_number
 
 	-- PR/MR numbers only come with `--full` (forge lookups), so pay for them
 	-- lazily, when a `pr:`/`mr:` sigil is typed.
-	local mode = kind == "pr" and "full" or "basic"
-	local items = state.cache[mode]
-
-	if not items then
-		local envelope, err = cli.list_json({
-			branches = opts.branches ~= false,
-			remotes = opts.remotes ~= false,
-			full = mode == "full",
-		})
-		if not envelope then
-			log.err(err or "could not list worktrees")
-			return {}
+	--
+	-- stale-while-revalidate: a stale entry renders instantly and the cache
+	-- refreshes in the background; when fresh rows land, repaint the picker —
+	-- but only when they actually differ, so an up-to-date list stays put.
+	local envelope, err
+	envelope, err = cache.get({
+		branches = opts.branches ~= false,
+		remotes = opts.remotes ~= false,
+		full = kind == "pr",
+	}, function(fresh)
+		if not ctx.picker.closed and not (envelope and vim.deep_equal(fresh.items, envelope.items)) then
+			ctx.picker:refresh()
 		end
-		items = envelope.items
-		state.cache[mode] = items
+	end)
+	if not envelope then
+		log.err(err or "could not list worktrees")
+		return {}
 	end
+	local items = envelope.items
 
 	---@type Worktrunk.PickerItem[]
 	local entries = {}
@@ -320,12 +321,8 @@ end
 --------------------------------------------------------------------------------
 
 ---Drop the cached `wt list` output so the next find re-runs the command.
----@param picker snacks.Picker
-local function invalidate(picker)
-	local state = (picker.opts --[[@as Worktrunk.PickerConfig]]).wt_state
-	if state then
-		state.cache = {}
-	end
+local function invalidate()
+	cache.invalidate()
 end
 
 ---@type table<string, snacks.picker.Action.spec>
@@ -366,7 +363,7 @@ local actions = {
 				actions.delete(branch)
 			end
 			if not picker.closed then
-				invalidate(picker)
+				invalidate()
 				picker:refresh()
 			end
 		end)
@@ -385,7 +382,7 @@ local actions = {
 
 	---Re-run `wt list` (pick up worktrees created elsewhere).
 	worktrunk_refresh = function(picker)
-		invalidate(picker)
+		invalidate()
 		picker:refresh()
 	end,
 }
@@ -428,7 +425,7 @@ function M.pick(opts, on_choice)
 		title = "Worktrees",
 		branches = true,
 		remotes = true,
-		wt_state = { cache = {} },
+		wt_state = {},
 		filter = { transform = transform },
 		finder = finder,
 		format = format,

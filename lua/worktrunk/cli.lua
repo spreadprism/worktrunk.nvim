@@ -365,22 +365,35 @@ end
 --------------------------------------------------------------------------------
 
 ---Run `wt list --format=json` and decode the schema 2 envelope.
+---With `on_done` the call is asynchronous: it returns nothing and delivers
+---the decoded envelope (scheduled on the main loop) when `wt` exits.
 ---@param opts worktrunk.ListOpts|nil
+---@param on_done fun(envelope: Worktrunk.List|nil, err: string|nil)|nil
 ---@return Worktrunk.List|nil envelope, string|nil err
-function M.list_json(opts)
+function M.list_json(opts, on_done)
 	opts = vim.tbl_extend("force", opts or {}, { format = "json" })
 	opts.config_set = vim.list_extend(as_list(opts.config_set), { "list.json-schema=2" })
 
-	local result = M.run(M.list_args(opts), opts)
-	if result.code ~= 0 then
-		return nil, (result.stderr ~= "" and result.stderr or ("wt list exited with %d"):format(result.code))
+	---@param result vim.SystemCompleted
+	---@return Worktrunk.List|nil envelope, string|nil err
+	local function decode(result)
+		if result.code ~= 0 then
+			return nil, (result.stderr ~= "" and result.stderr or ("wt list exited with %d"):format(result.code))
+		end
+		local ok, decoded = pcall(vim.json.decode, result.stdout, { luanil = { object = true, array = true } })
+		if not ok then
+			return nil, "failed to decode wt list output: " .. tostring(decoded)
+		end
+		return decoded, nil
 	end
 
-	local ok, decoded = pcall(vim.json.decode, result.stdout, { luanil = { object = true, array = true } })
-	if not ok then
-		return nil, "failed to decode wt list output: " .. tostring(decoded)
+	if on_done then
+		M.run(M.list_args(opts), opts, function(result)
+			on_done(decode(result))
+		end)
+		return
 	end
-	return decoded, nil
+	return decode(M.run(M.list_args(opts), opts))
 end
 
 return M

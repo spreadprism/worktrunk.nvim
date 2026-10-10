@@ -1,5 +1,6 @@
 --- The commands the plugin exposes: switch, create, delete, merge.
 local buffer = require("worktrunk.buffer")
+local cache = require("worktrunk.cache")
 local cli = require("worktrunk.cli")
 local config = require("worktrunk.config")
 local hooks = require("worktrunk.hooks")
@@ -41,10 +42,21 @@ end
 
 ---Where nvim sits right now: what `auto_buffer` diffs against, and what the
 ---`on_switch` hook reports as `from`.
+---
+---`cwd` overrides the directory the lookup runs from: after a merge nvim's own
+---cwd can be a worktree `wt` has just deleted, and git refuses to run there.
+---@param cwd string|nil
 ---@return string|nil
-local function origin()
-	local current = worktree.current()
+local function origin(cwd)
+	local current = worktree.current({ cwd = cwd })
 	return (current and current.worktree and current.worktree.path) or vim.fn.getcwd()
+end
+
+---The worktree layout just changed: drop the cache and re-warm the picker's
+---query in the background so the next picker open is instant *and* fresh.
+local function refetch()
+	cache.invalidate()
+	cache.prefetch({ branches = true, remotes = true })
 end
 
 ---`wt` does the cd through shell integration we don't have, so every switch
@@ -52,7 +64,7 @@ end
 ---@param opts worktrunk.SwitchOpts
 ---@return table|nil result decoded `{action, branch, path}`
 local function run_switch(opts)
-	local from = origin()
+	local from = origin(opts.cwd)
 
 	local result = cli.switch(vim.tbl_extend("force", opts, { no_cd = true, yes = true, format = "json" })) --[[@as vim.SystemCompleted]]
 	if result.code ~= 0 then
@@ -66,7 +78,9 @@ local function run_switch(opts)
 		return nil
 	end
 
+	-- after the cd, so the warmed entry is keyed on the new cwd
 	cd(decoded.path)
+	refetch()
 	if from and config.get().auto_buffer then
 		buffer.migrate(from, decoded.path)
 	end
@@ -85,14 +99,15 @@ end
 
 --- switch to the given worktree, if nil open a snack picker with choices
 ---@param worktree_name? string
-function M.switch(worktree_name)
+---@param opts? { cwd: string|nil } directory to run `wt` from (default: nvim's cwd)
+function M.switch(worktree_name, opts)
 	if not worktree_name then
 		return require("worktrunk.picker").pick(nil, function(wt)
 			M.switch(worktree.name(wt))
 		end)
 	end
 
-	local decoded = run_switch({ branch = worktree_name })
+	local decoded = run_switch({ branch = worktree_name, cwd = opts and opts.cwd })
 	if decoded then
 		log.info("switched to " .. (decoded.branch or decoded.path))
 	end
@@ -180,6 +195,7 @@ function M.delete(worktree_name)
 		return
 	end
 
+	refetch()
 	log.info("deleted " .. worktree.name(target))
 end
 
@@ -228,6 +244,8 @@ function M.merge(opts)
 
 	-- where to land afterwards: the target's worktree if it has one, else base
 	local destination = worktree.find(opts.target) or worktree.base()
+	local destination_path = destination and destination.worktree and destination.worktree.path
+	local source_path = current.worktree and current.worktree.path
 
 	--- `wt merge` resolves the branch from its working directory, and removes
 	--- that worktree when it's done — so pin it explicitly and leave afterwards.
@@ -240,10 +258,24 @@ function M.merge(opts)
 		return
 	end
 
+	-- everything the cache knows predates the merge; the follow-up switch
+	-- re-warms it (run_switch), so only drop it here
+	cache.invalidate()
+
+	-- `wt merge` removes the merged worktree in a background job that holds the
+	-- repository locks; switching on top of it races with `.git/index.lock`.
+	local merged = decode(result) or {}
+	if merged.removed and source_path then
+		vim.wait(5000, function()
+			return vim.fn.isdirectory(source_path) == 0
+		end, 50)
+	end
+
 	-- follow the target either way: the worktree we merged from is usually gone,
-	-- and with --no-remove it survives but we still want to land on the target
+	-- and with --no-remove it survives but we still want to land on the target.
+	-- run the switch from the destination: nvim's cwd may be the deleted worktree.
 	if destination then
-		M.switch(worktree.name(destination))
+		M.switch(worktree.name(destination), { cwd = destination_path })
 	end
 	log.info("merged " .. worktree.name(current) .. " into " .. opts.target)
 end

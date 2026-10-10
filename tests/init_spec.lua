@@ -37,8 +37,13 @@ local function wt(branch, opts)
 end
 
 local function stub_list(items)
-	cli.list_json = function()
-		return { schema = 2, repo = { default_branch = "main" }, collected = {}, items = items }, nil
+	require("worktrunk.cache").invalidate()
+	cli.list_json = function(_, on_done)
+		local envelope = { schema = 2, repo = { default_branch = "main" }, collected = {}, items = items }
+		if on_done then
+			return on_done(envelope, nil)
+		end
+		return envelope, nil
 	end
 end
 

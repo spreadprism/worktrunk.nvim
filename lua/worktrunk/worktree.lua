@@ -1,5 +1,5 @@
---- Read-only queries over `wt list`.
-local cli = require("worktrunk.cli")
+--- Read-only queries over `wt list`, served from the shared cache.
+local cache = require("worktrunk.cache")
 local log = require("worktrunk.log")
 
 require("worktrunk.types")
@@ -14,10 +14,12 @@ function M.name(wt)
 end
 
 ---Every row of `wt list`, including branches without a worktree when asked.
+---Served from the cache: callers that need fresh data go through
+---`require("worktrunk.cache").refresh` / `invalidate` first.
 ---@param opts? worktrunk.ListOpts
 ---@return Worktrunk.Worktree[]
 function M.all(opts)
-	local envelope, err = cli.list_json(opts)
+	local envelope, err = cache.get(opts)
 	if not envelope then
 		log.err(err or "could not list worktrees")
 		return {}
@@ -26,17 +28,19 @@ function M.all(opts)
 end
 
 ---Only the rows backed by a worktree on disk.
+---@param opts? worktrunk.ListOpts
 ---@return Worktrunk.Worktree[]
-function M.list()
+function M.list(opts)
 	return vim.tbl_filter(function(item)
 		return item.worktree ~= nil
-	end, M.all())
+	end, M.all(opts))
 end
 
 ---The repository's base (primary) worktree.
+---@param opts? worktrunk.ListOpts
 ---@return Worktrunk.Worktree|nil
-function M.base()
-	for _, wt in ipairs(M.list()) do
+function M.base(opts)
+	for _, wt in ipairs(M.list(opts)) do
 		if wt.worktree and wt.worktree.main then
 			return wt
 		end
@@ -44,10 +48,11 @@ function M.base()
 	return nil
 end
 
----The worktree nvim is currently in.
+---The worktree nvim is currently in (or the one holding `opts.cwd`).
+---@param opts? worktrunk.ListOpts
 ---@return Worktrunk.Worktree|nil
-function M.current()
-	for _, wt in ipairs(M.list()) do
+function M.current(opts)
+	for _, wt in ipairs(M.list(opts)) do
 		if wt.worktree and wt.worktree.current then
 			return wt
 		end
